@@ -1,0 +1,21 @@
+Invoke-Command -ComputerName "MyVM1" -ScriptBlock {
+     Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID, VolumeName, @{Name="Size(GB)";Expression={[math]::round($_.Size/1GB,2)}}, @{Name="Free(GB)";Expression={[math]::round($_.FreeSpace/1GB,2)}}, @{Name="Used(GB)";Expression={[math]::round(($_.Size - $_.FreeSpace)/1GB,2)}}, @{Name="Free(%)";Expression={[math]::round(($_.FreeSpace / $_.Size) * 100, 2)}}
+}
+
+DeviceID       : C:
+VolumeName     : Windows
+Size(GB)       : 126.51
+Free(GB)       : 111.56
+Used(GB)       : 14.96
+Free(%)        : 88.18
+PSComputerName : MyVM1
+RunspaceId     : 86586f85-c603-4751-873d-12e39e2b7813
+
+DeviceID       : D:
+VolumeName     : Temporary Storage
+Size(GB)       : 7
+Free(GB)       : 6.09
+Used(GB)       : 0.91
+Free(%)        : 87.02
+PSComputerName : MyVM1
+RunspaceId     : 86586f85-c603-4751-873d-12e39e2b7813

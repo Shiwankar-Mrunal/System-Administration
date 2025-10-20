@@ -1,0 +1,99 @@
+# Write-Host "All 4 VMs created successfully with 1 NSG, 1 VNet, 1 Subnet, and 1 Data Disk!
+
+
+# Define parameters
+$resourceGroupName = "MyResourceGroup"
+$location = "EastUS"
+$vmSize = "Standard_DS1_v2"
+$imagePublisher = "MicrosoftWindowsServer"
+$imageOffer = "WindowsServer"
+$imageSku = "2019-Datacenter"
+
+# Prompt for VM admin credentials
+$cred = Get-Credential -Message "Enter admin credentials for the VMs"
+
+# Create the Resource Group
+New-AzResourceGroup -Name $resourceGroupName -Location $location
+
+# Set base names
+$vmBaseName = "MyVM"
+$diskName = "MyVM-DataDisk"
+$vnetName = "MyVM-VNet"
+$subnetName = "MyVM-Subnet"
+$nsgName = "MyVM-NSG"
+
+Write-Host "Creating Network Security Group (NSG), Virtual Network (VNet), and Subnet"
+
+# Create Network Security Group (NSG)
+$nsg = New-AzNetworkSecurityGroup `
+    -ResourceGroupName $resourceGroupName `
+    -Location $location `
+    -Name $nsgName
+
+# Add RDP rule to the NSG
+$nsg | Add-AzNetworkSecurityRuleConfig `
+    -Name "Allow-RDP" `
+    -Protocol "Tcp" `
+    -Direction "Inbound" `
+    -Priority 1000 `
+    -SourceAddressPrefix "*" `
+    -SourcePortRange "*" `
+    -DestinationAddressPrefix "*" `
+    -DestinationPortRange 3389 `
+    -Access "Allow" | Set-AzNetworkSecurityGroup
+
+# Create Virtual Network (VNet) and Subnet
+$vnet = New-AzVirtualNetwork `
+    -Name $vnetName `
+    -ResourceGroupName $resourceGroupName `
+    -Location $location `
+    -AddressPrefix "10.0.0.0/16" `
+    -Subnet @(New-AzVirtualNetworkSubnetConfig -Name $subnetName -AddressPrefix "10.0.0.0/24")
+
+Write-Host "Creating a Data Disk (1 TB)"
+# Create 1 Data Disk (1 TB)
+$dataDisk = New-AzDiskConfig -AccountType "Standard_LRS" -SizeGB 1024
+New-AzDisk -ResourceGroupName $resourceGroupName -Location $location -DiskName $diskName -Disk $dataDisk
+
+# Loop to create 4 VMs
+for ($i = 1; $i -le 4; $i++) {
+    $vmName = "$vmBaseName$i"
+    
+    Write-Host "Creating VM: $vmName"
+
+    # Create Public IP Address for each VM
+    $publicIP = New-AzPublicIpAddress `
+        -Name "$vmName-PublicIP" `
+        -ResourceGroupName $resourceGroupName `
+        -Location $location `
+        -AllocationMethod Static `
+        -Sku Standard
+
+    # Create NIC (Network Interface) for the VM
+    $nic = New-AzNetworkInterface `
+        -Name "$vmName-NIC" `
+        -ResourceGroupName $resourceGroupName `
+        -Location $location `
+        -SubnetId $vnet.Subnets[0].Id `
+        -PublicIpAddressId $publicIP.Id `
+        -NetworkSecurityGroupId $nsg.Id
+
+    # Create VM Configuration
+    $vmConfig = New-AzVMConfig -VMName $vmName -VMSize $vmSize | `
+        Set-AzVMOperatingSystem -Windows -ComputerName $vmName -Credential $cred -ProvisionVMAgent -EnableAutoUpdate | `
+        Set-AzVMSourceImage -PublisherName $imagePublisher -Offer $imageOffer -Skus $imageSku -Version "latest" | `
+        Add-AzVMNetworkInterface -Id $nic.Id
+
+    # Attach the Data Disk to the VM
+    $vmConfig = $vmConfig | Add-AzVMDataDisk -Name $diskName -CreateOption Attach -ManagedDiskId (Get-AzDisk -ResourceGroupName $resourceGroupName -Name $diskName).Id -Lun 0
+
+    # Create the VM
+    New-AzVM -ResourceGroupName $resourceGroupName -Location $location -VM $vmConfig
+
+    # Output the Public IP address of the VM
+    $publicIP = Get-AzPublicIpAddress -ResourceGroupName $resourceGroupName -Name "$vmName-PublicIP"
+    Write-Host "VM $vmName created with Public IP: $($publicIP.IpAddress)"
+}
+
+
+
